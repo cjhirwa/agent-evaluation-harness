@@ -1,0 +1,139 @@
+# Action: change world state correctly, and only as asked.
+
+- id: cancel-pending-order
+  category: action
+  difficulty: easy
+  prompt: Lena Fischer emailed asking us to cancel an order. Please take care of it.
+  checks:
+    - type: sql_equals
+      query: SELECT status FROM orders WHERE id = 1004
+      expected: [[cancelled]]
+    - type: sql_equals
+      query: SELECT id, status FROM orders WHERE id != 1004
+      expected_sql: SELECT id, status FROM orders WHERE id != 1004
+  oracle:
+    - call: search_emails
+      args: {query: Lena}
+    - call: read_email
+      args: {email_id: E7}
+    - call: update_order_status
+      args: {order_id: 1004, status: cancelled}
+    - answer: Order 1004 for Lena Fischer has been cancelled.
+
+- id: refund-damaged-stove
+  category: action
+  difficulty: medium
+  prompt: Handle Daniel Okafor's damaged-item email according to our refund policy.
+  checks:
+    - type: sql_equals
+      query: SELECT order_id, amount_usd FROM refunds WHERE id > 1
+      expected: [[1019, 64.00]]
+  oracle:
+    - call: read_email
+      args: {email_id: E1}
+    - call: read_file
+      args: {path: /docs/refund_policy.md}
+    - call: sql_query
+      args: {query: "SELECT sku, qty, unit_price_usd FROM order_items WHERE order_id = 1019"}
+    - call: issue_refund
+      args: {order_id: 1019, amount_usd: 64.0, reason: "Damaged item: Camp Stove CS-110"}
+    - answer: Refunded $64.00 for the damaged Camp Stove on order 1019.
+
+- id: restock-shipment
+  category: action
+  difficulty: easy
+  prompt: >-
+    A shipment just arrived with 25 pairs of Trail Runner Shoes and 40 pairs of Merino Wool Socks.
+    Update our inventory.
+  checks:
+    - type: sql_equals
+      query: SELECT sku, stock FROM products WHERE sku IN ('TR-100', 'MS-010')
+      expected: [[TR-100, 33], [MS-010, 46]]
+    - type: sql_equals
+      query: SELECT sku, stock FROM products WHERE sku NOT IN ('TR-100', 'MS-010')
+      expected_sql: SELECT sku, stock FROM products WHERE sku NOT IN ('TR-100', 'MS-010')
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT sku, name FROM products WHERE name IN ('Trail Runner Shoes', 'Merino Wool Socks')"}
+    - call: adjust_stock
+      args: {sku: TR-100, delta: 25}
+    - call: adjust_stock
+      args: {sku: MS-010, delta: 40}
+      parallel: true
+    - answer: "Stock updated: TR-100 is now 33 and MS-010 is now 46."
+
+- id: shipping-notification
+  category: action
+  difficulty: easy
+  prompt: Order 1003 has shipped. Email the customer to let them know, following our shipping policy.
+  checks:
+    - type: email_sent
+      to: daniel.okafor@example.com
+      body_contains: ["1003"]
+    - type: emails_to_exactly
+      recipients: [daniel.okafor@example.com]
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT c.email FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=1003"}
+    - call: send_email
+      args: {to: daniel.okafor@example.com, subject: "Your order 1003 has shipped", body: "Hi Daniel, your order 1003 is on its way. - Acme Outfitters"}
+    - answer: Emailed daniel.okafor@example.com that order 1003 has shipped.
+
+- id: schedule-inventory-review
+  category: action
+  difficulty: medium
+  prompt: >-
+    Sam wants an hour on Tuesday the 18th to go over stock levels. Book a 1-hour "Inventory review"
+    with sam@acme.example at the earliest time between 09:00 and 17:00 that doesn't clash with my
+    existing meetings.
+  checks:
+    - type: event_exists
+      title_contains: inventory review
+      date: "2025-03-18"
+      start: "12:00"
+      end: "13:00"
+      attendees_include: [sam@acme.example]
+  oracle:
+    - call: list_events
+      args: {date: "2025-03-18"}
+    - call: create_event
+      args: {title: Inventory review, date: "2025-03-18", start_time: "12:00", end_time: "13:00", attendees: [sam@acme.example]}
+    - answer: Booked "Inventory review" with Sam on 2025-03-18 from 12:00 to 13:00.
+
+- id: update-todo
+  category: action
+  difficulty: easy
+  prompt: Mark "Reorder socks" as done in my to-do list at /notes/todo.txt. Leave everything else as it is.
+  checks:
+    - type: file_lines
+      path: /notes/todo.txt
+      ordered: true
+      lines: ["[x] Reorder socks", "[ ] Update shipping rates page", "[x] Renew domain", "[ ] Plan spring sale"]
+  oracle:
+    - call: read_file
+      args: {path: /notes/todo.txt}
+    - call: write_file
+      args: {path: /notes/todo.txt, content: "[x] Reorder socks\n[ ] Update shipping rates page\n[x] Renew domain\n[ ] Plan spring sale\n"}
+    - answer: Marked "Reorder socks" as done.
+
+- id: gold-germany-campaign
+  category: action
+  difficulty: medium
+  prompt: >-
+    Send each of our gold-tier customers in Germany an email with the subject "Spring preview"
+    inviting them to our spring collection preview. One email per customer.
+  checks:
+    - type: emails_to_exactly
+      subject_contains: spring preview
+      sql: SELECT email FROM customers WHERE tier = 'gold' AND country = 'DE'
+    - type: emails_to_exactly
+      sql: SELECT email FROM customers WHERE tier = 'gold' AND country = 'DE'
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT name, email FROM customers WHERE tier='gold' AND country='DE'"}
+    - call: send_email
+      args: {to: lena.fischer@example.de, subject: Spring preview, body: "Hi Lena, you're invited to preview our spring collection!"}
+    - call: send_email
+      args: {to: jonas.weber@example.de, subject: Spring preview, body: "Hi Jonas, you're invited to preview our spring collection!"}
+      parallel: true
+    - answer: Sent the Spring preview email to Lena Fischer and Jonas Weber.

@@ -1,0 +1,80 @@
+# Recovery: injected service faults, wrong paths, and schema the agent has to discover.
+
+- id: flaky-fx-service
+  category: recovery
+  difficulty: medium
+  prompt: What is the total of order 1023 in British pounds at today's rate? Round to 2 decimals.
+  setup:
+    faults:
+      - tool: get_exchange_rate
+        fail_times: 2
+        error: "503 Service Unavailable: upstream FX provider timed out. This is transient; retry the request."
+  checks:
+    - type: answer_number
+      value: 188.02
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT total_usd FROM orders WHERE id = 1023"}
+    - call: get_exchange_rate
+      args: {base: USD, quote: GBP}
+    - call: get_exchange_rate
+      args: {base: USD, quote: GBP}
+    - call: get_exchange_rate
+      args: {base: USD, quote: GBP}
+    - answer: Order 1023 is $238.00, which is £188.02 at 0.79.
+
+- id: rate-limited-carrier
+  category: recovery
+  difficulty: medium
+  prompt: How much would it cost to ship one Ultralight 2P Tent to Aiko Tanaka?
+  setup:
+    faults:
+      - tool: get_shipping_quote
+        fail_times: 1
+        error: "429 Too Many Requests: rate limit exceeded, retry after 1 second."
+  checks:
+    - type: answer_number
+      value: 41.40
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT country FROM customers WHERE name = 'Aiko Tanaka'"}
+    - call: sql_query
+      args: {query: "SELECT weight_kg FROM products WHERE name = 'Ultralight 2P Tent'"}
+    - call: get_shipping_quote
+      args: {country: JP, weight_kg: 1.9}
+    - call: get_shipping_quote
+      args: {country: JP, weight_kg: 1.9}
+    - answer: Shipping the tent (1.9 kg) to Japan costs $41.40.
+
+- id: wrong-file-path
+  category: recovery
+  difficulty: medium
+  prompt: How many data rows (excluding the header) are in the Q4 sales export at /data/sales-q4.csv?
+  checks:
+    - type: answer_number
+      value: 64
+      tolerance: 0
+  oracle:
+    - call: read_file
+      args: {path: /data/sales-q4.csv}
+    - call: list_files
+      args: {directory: /data}
+    - call: run_python
+      args: {code: "print(sum(1 for _ in open('data/sales_q4.csv')) - 1)"}
+    - answer: The export (actually at /data/sales_q4.csv) has 64 data rows.
+
+- id: discover-sales-channel
+  category: recovery
+  difficulty: medium
+  prompt: Which sales channel has brought in the most orders, and how many?
+  checks:
+    - type: answer_contains
+      sql: SELECT channel FROM orders GROUP BY channel ORDER BY COUNT(*) DESC LIMIT 1
+    - type: answer_number
+      sql: SELECT COUNT(*) FROM orders GROUP BY channel ORDER BY COUNT(*) DESC LIMIT 1
+      tolerance: 0
+  oracle:
+    - call: get_schema
+    - call: sql_query
+      args: {query: "SELECT channel, COUNT(*) c FROM orders GROUP BY channel ORDER BY c DESC"}
+    - answer: The web channel has brought in the most orders, with 18.

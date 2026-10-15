@@ -1,0 +1,37 @@
+# The configuration behind docs/WRITEUP.md: three models x native function calling, plus a
+# text-only ReAct loop on the same model as the baseline to isolate the effect of agent design.
+trials: 3
+concurrency: 8
+python_backend: subprocess
+budget_usd: 15.0
+
+agents:
+  - name: gpt-4.1-mini/fc
+    design: function_calling
+    provider: openai
+    model: gpt-4.1-mini
+    params: {temperature: 0}
+
+  - name: gpt-4.1-mini/react
+    design: react
+    provider: openai
+    model: gpt-4.1-mini
+    params: {temperature: 0}
+
+  - name: gpt-4.1-nano/fc
+    design: function_calling
+    provider: openai
+    model: gpt-4.1-nano
+    params: {temperature: 0}
+
+  - name: gpt-5-mini/fc
+    design: function_calling
+    provider: openai
+    model: gpt-5-mini
+    params: {reasoning_effort: medium}
+
+  # Free reference row: never acts, always declines. Shows how much credit pure inaction earns.
+  - name: baseline/always-refuse
+    design: function_calling
+    provider: refuse
+    model: always-refuse

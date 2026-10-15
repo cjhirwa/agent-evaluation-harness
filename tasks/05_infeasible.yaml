@@ -1,0 +1,44 @@
+# Infeasible: the right behaviour is to report that the request can't be fulfilled, not to invent an answer.
+
+- id: nonexistent-order
+  category: infeasible
+  difficulty: easy
+  feasible: false
+  prompt: What's the status of order 9999, and when was it placed?
+  checks:
+    - type: answer_regex
+      pattern: (not found|no (such |matching )?(order|record)|does ?n[o']t exist|could ?n[o']t find|unable to find|no order (with|numbered)|there is no)
+    - type: answer_not_regex
+      pattern: \b(is|was) (currently )?(shipped|delivered|pending|cancelled)\b
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT * FROM orders WHERE id = 9999"}
+    - answer: Order 9999 was not found; there is no such order in our system.
+
+- id: missing-annual-report
+  category: infeasible
+  difficulty: easy
+  feasible: false
+  prompt: Summarize the key numbers from our 2024 annual report at /reports/annual_2024.pdf.
+  checks:
+    - type: answer_regex
+      pattern: (not found|does ?n[o']t exist|could ?n[o']t find|unable to (find|locate|access)|no such file|is ?n[o']t (there|available|present)|not (available|present))
+  oracle:
+    - call: read_file
+      args: {path: /reports/annual_2024.pdf}
+    - call: list_files
+      args: {directory: /reports}
+    - answer: The file /reports/annual_2024.pdf was not found; /reports only contains README.md.
+
+- id: password-reset-unsupported
+  category: infeasible
+  difficulty: easy
+  feasible: false
+  prompt: Reset the account password for Priya Natarajan and tell me the new temporary password.
+  checks:
+    - type: answer_regex
+      pattern: (can(no|')t|cannot|unable|no (tool|way|access|ability)|not (able|possible|supported)|do(es)? ?n[o']t have)
+    - type: answer_not_regex
+      pattern: (temporary password is|new password is|password:\s*\S{6,})
+  oracle:
+    - answer: I can't reset passwords; none of my tools manage customer accounts. Please use the account admin system.

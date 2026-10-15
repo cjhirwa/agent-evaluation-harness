@@ -1,0 +1,88 @@
+# Retrieval: answer a factual question with one or two lookups.
+
+- id: order-status-lookup
+  category: retrieval
+  difficulty: easy
+  prompt: What is the current status of order 1007?
+  checks:
+    - type: answer_contains
+      values: [shipped]
+    - type: answer_not_regex
+      pattern: \b(delivered|pending|cancelled)\b
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT status FROM orders WHERE id = 1007"}
+    - answer: Order 1007 is currently shipped.
+
+- id: customer-email-lookup
+  category: retrieval
+  difficulty: easy
+  prompt: What email address do we have on file for Priya Natarajan?
+  checks:
+    - type: answer_contains
+      values: [priya.natarajan@example.com]
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT email FROM customers WHERE name = 'Priya Natarajan'"}
+    - answer: Priya Natarajan's email is priya.natarajan@example.com.
+
+- id: count-gold-canada
+  category: retrieval
+  difficulty: easy
+  prompt: How many gold-tier customers do we have in Canada?
+  checks:
+    - type: answer_number
+      sql: SELECT COUNT(*) FROM customers WHERE tier = 'gold' AND country = 'CA'
+      tolerance: 0
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT COUNT(*) FROM customers WHERE tier='gold' AND country='CA'"}
+    - answer: We have 2 gold-tier customers in Canada.
+
+- id: top-product-by-revenue
+  category: retrieval
+  difficulty: medium
+  prompt: >-
+    Which product (give its SKU) has generated the most revenue, counting quantity x unit price
+    across all orders that were not cancelled or refunded?
+  checks:
+    - type: answer_contains
+      sql: >-
+        SELECT oi.sku FROM order_items oi JOIN orders o ON o.id = oi.order_id
+        WHERE o.status NOT IN ('cancelled', 'refunded')
+        GROUP BY oi.sku ORDER BY SUM(oi.qty * oi.unit_price_usd) DESC LIMIT 1
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT oi.sku, SUM(oi.qty*oi.unit_price_usd) r FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.status NOT IN ('cancelled','refunded') GROUP BY oi.sku ORDER BY r DESC LIMIT 1"}
+    - answer: TN-500 (Ultralight 2P Tent) generated the most revenue, $1,047.00.
+
+- id: refund-window-policy
+  category: retrieval
+  difficulty: easy
+  prompt: According to our refund policy, how many days does a customer have to request a refund?
+  checks:
+    - type: answer_number
+      value: 30
+      tolerance: 0
+  oracle:
+    - call: read_file
+      args: {path: /docs/refund_policy.md}
+    - answer: Customers have 30 days from the order date to request a refund.
+
+- id: damaged-item-email
+  category: retrieval
+  difficulty: easy
+  prompt: >-
+    A customer emailed us about a damaged item. Which order number did they mention, and which product
+    was damaged?
+  checks:
+    - type: answer_contains
+      values: ["1019"]
+    - type: answer_regex
+      pattern: (camp stove|CS-110)
+  oracle:
+    - call: search_emails
+      args: {query: damaged}
+    - call: read_email
+      args: {email_id: E1}
+    - answer: Daniel Okafor mentioned order 1019; the Camp Stove (CS-110) arrived damaged.

@@ -1,0 +1,29 @@
+# Local run: Llama 3.1 8B (Q4_K_M) via Ollama, compared across three agent designs.
+# No API cost; efficiency is reported as tokens and wall-clock time. One GPU, so run sequentially.
+trials: 1  # 2 to 10 minutes per episode on a laptop CPU; add trials later with --trials (runs resume)
+concurrency: 1
+python_backend: subprocess
+
+agents:
+  - name: llama3.1-8b/fc
+    design: function_calling
+    provider: ollama
+    model: llama3.1:latest
+    params: {num_ctx: 16384, temperature: 0}
+
+  - name: llama3.1-8b/react
+    design: react
+    provider: ollama
+    model: llama3.1:latest
+    params: {num_ctx: 16384, temperature: 0}
+
+  - name: llama3.1-8b/plan
+    design: plan_execute
+    provider: ollama
+    model: llama3.1:latest
+    params: {num_ctx: 16384, temperature: 0}
+
+  - name: baseline/always-refuse
+    design: function_calling
+    provider: refuse
+    model: always-refuse

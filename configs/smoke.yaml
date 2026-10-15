@@ -1,0 +1,19 @@
+# Quick end-to-end check of the provider integrations (a few cents).
+trials: 1
+concurrency: 4
+tasks: [order-status-lookup, flaky-fx-service]
+
+agents:
+  - name: gpt-4.1-mini/fc
+    design: function_calling
+    provider: openai
+    model: gpt-4.1-mini
+  - name: gpt-4.1-mini/react
+    design: react
+    provider: openai
+    model: gpt-4.1-mini
+  - name: gpt-5-mini/fc
+    design: function_calling
+    provider: openai
+    model: gpt-5-mini
+    params: {reasoning_effort: medium}

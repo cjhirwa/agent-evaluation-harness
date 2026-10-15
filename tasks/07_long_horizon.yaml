@@ -1,0 +1,120 @@
+# Long horizon: many dependent steps across several tools.
+
+- id: february-customer-summary
+  category: long_horizon
+  difficulty: hard
+  prompt: >-
+    Create /reports/feb_summary.csv with the header customer_name,orders,total_usd. Include one row
+    per customer for delivered orders placed in February 2025: the number of such orders and their
+    total value. Sort by total_usd, highest first.
+  checks:
+    - type: csv_equals
+      path: /reports/feb_summary.csv
+      header: [customer_name, orders, total_usd]
+      sql: >-
+        SELECT c.name, COUNT(*), ROUND(SUM(o.total_usd), 2) AS t FROM orders o
+        JOIN customers c ON c.id = o.customer_id
+        WHERE o.status = 'delivered' AND o.order_date BETWEEN '2025-02-01' AND '2025-02-28'
+        GROUP BY c.id ORDER BY t DESC
+  oracle:
+    - call: run_python
+      args:
+        code: |
+          import csv
+          rows = [("Jonas Weber", 1, 413.0), ("Rahul Mehta", 2, 317.0), ("Aiko Tanaka", 1, 258.0),
+                  ("Grace Kim", 2, 216.0), ("Priya Natarajan", 1, 198.0), ("Sophie Martin", 1, 136.5),
+                  ("Emily Clarke", 1, 107.0), ("Marcus Bell", 1, 92.0)]
+          with open("reports/feb_summary.csv", "w", newline="") as f:
+              w = csv.writer(f)
+              w.writerow(["customer_name", "orders", "total_usd"])
+              w.writerows(rows)
+          print("ok")
+    - answer: Wrote /reports/feb_summary.csv with 8 customers.
+
+- id: defective-batch-recall
+  category: long_horizon
+  difficulty: hard
+  prompt: >-
+    Our supplier says the Merino Wool Socks we shipped in February 2025 came from a defective batch.
+    For every delivered order placed in February 2025 that contains them, refund just the socks'
+    line-item amount and email the customer to let them know. Don't touch any other orders.
+  checks:
+    - type: sql_equals
+      query: SELECT order_id, amount_usd FROM refunds WHERE id > 1
+      expected_sql: >-
+        SELECT oi.order_id, ROUND(oi.qty * oi.unit_price_usd, 2) FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        WHERE oi.sku = 'MS-010' AND o.status = 'delivered'
+        AND o.order_date BETWEEN '2025-02-01' AND '2025-02-28'
+    - type: emails_to_exactly
+      sql: >-
+        SELECT DISTINCT c.email FROM order_items oi JOIN orders o ON o.id = oi.order_id
+        JOIN customers c ON c.id = o.customer_id
+        WHERE oi.sku = 'MS-010' AND o.status = 'delivered'
+        AND o.order_date BETWEEN '2025-02-01' AND '2025-02-28'
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT o.id, c.email, oi.qty*oi.unit_price_usd FROM order_items oi JOIN orders o ON o.id=oi.order_id JOIN customers c ON c.id=o.customer_id WHERE oi.sku='MS-010' AND o.status='delivered' AND o.order_date LIKE '2025-02-%'"}
+    - call: issue_refund
+      args: {order_id: 1010, amount_usd: 78.0, reason: "Defective batch: Merino Wool Socks"}
+    - call: issue_refund
+      args: {order_id: 1011, amount_usd: 39.0, reason: "Defective batch: Merino Wool Socks"}
+      parallel: true
+    - call: issue_refund
+      args: {order_id: 1025, amount_usd: 58.5, reason: "Defective batch: Merino Wool Socks"}
+      parallel: true
+    - call: send_email
+      args: {to: emily.clarke@example.co.uk, subject: "Refund for order 1010", body: "We refunded $78.00 for defective Merino Wool Socks."}
+    - call: send_email
+      args: {to: rahul.mehta@example.ca, subject: "Refund for order 1011", body: "We refunded $39.00 for defective Merino Wool Socks."}
+      parallel: true
+    - call: send_email
+      args: {to: sophie.martin@example.fr, subject: "Refund for order 1025", body: "We refunded $58.50 for defective Merino Wool Socks."}
+      parallel: true
+    - answer: Refunded orders 1010 ($78.00), 1011 ($39.00) and 1025 ($58.50) and emailed each customer.
+
+- id: footwear-eur-price-list
+  category: long_horizon
+  difficulty: hard
+  prompt: >-
+    Our EU partner needs a price list. Create /reports/footwear_eur.csv with the header sku,price_eur
+    listing every footwear product with its price converted to euros at today's rate, rounded to 2
+    decimals, sorted by sku.
+  checks:
+    - type: csv_equals
+      path: /reports/footwear_eur.csv
+      header: [sku, price_eur]
+      sql: SELECT sku, ROUND(price_usd * 0.92, 2) FROM products WHERE category = 'footwear' ORDER BY sku
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT sku, price_usd FROM products WHERE category = 'footwear' ORDER BY sku"}
+    - call: get_exchange_rate
+      args: {base: USD, quote: EUR}
+    - call: write_file
+      args: {path: /reports/footwear_eur.csv, content: "sku,price_eur\nHK-200,173.88\nTR-100,118.68\n"}
+    - answer: Wrote /reports/footwear_eur.csv with HK-200 at €173.88 and TR-100 at €118.68.
+
+- id: restock-low-inventory-order
+  category: long_horizon
+  difficulty: hard
+  prompt: >-
+    For every product with fewer than 10 units in stock, email wholesale@peakgear-supply.example a
+    single purchase request listing each SKU and the quantity needed to bring it up to 25 units, then
+    record the request in /reports/po_request.txt (same SKU and quantity lines, format "SKU: qty").
+  checks:
+    - type: emails_to_exactly
+      recipients: [wholesale@peakgear-supply.example]
+    - type: email_sent
+      to: wholesale@peakgear-supply.example
+      body_contains: [TR-100, MS-010, BP-400, TN-500, TP-090]
+    - type: file_lines
+      path: /reports/po_request.txt
+      sql: "SELECT sku || ': ' || (25 - stock) FROM products WHERE stock < 10"
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT sku, 25 - stock FROM products WHERE stock < 10"}
+    - call: send_email
+      args: {to: wholesale@peakgear-supply.example, subject: Purchase request, body: "Please supply:\nTR-100: 17\nMS-010: 19\nBP-400: 21\nTN-500: 16\nTP-090: 22\n"}
+    - call: write_file
+      args: {path: /reports/po_request.txt, content: "TR-100: 17\nMS-010: 19\nBP-400: 21\nTN-500: 16\nTP-090: 22\n"}
+    - answer: Sent the purchase request for 5 SKUs and saved it to /reports/po_request.txt.

@@ -1,0 +1,100 @@
+# Multi-step: chain several tools and compute a result.
+
+- id: customer-delivered-spend
+  category: multi_step
+  difficulty: medium
+  prompt: How much has Marcus Bell spent in total on orders that have been delivered?
+  checks:
+    - type: answer_number
+      sql: >-
+        SELECT SUM(o.total_usd) FROM orders o JOIN customers c ON c.id = o.customer_id
+        WHERE c.name = 'Marcus Bell' AND o.status = 'delivered'
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT SUM(o.total_usd) FROM orders o JOIN customers c ON c.id=o.customer_id WHERE c.name='Marcus Bell' AND o.status='delivered'"}
+    - answer: Marcus Bell has spent $498.00 on delivered orders.
+
+- id: csv-december-revenue
+  category: multi_step
+  difficulty: medium
+  prompt: >-
+    Using the Q4 sales export in /data/sales_q4.csv, what was the total revenue (qty x unit price)
+    for December 2024? Give the amount to the cent.
+  checks:
+    - type: answer_number
+      value: 8816.50
+  oracle:
+    - call: run_python
+      args:
+        code: |
+          import csv
+          rows = list(csv.DictReader(open('data/sales_q4.csv')))
+          print(round(sum(int(r['qty']) * float(r['unit_price_usd']) for r in rows if r['date'].startswith('2024-12')), 2))
+    - answer: December 2024 revenue was $8,816.50.
+
+- id: order-total-in-eur
+  category: multi_step
+  difficulty: medium
+  prompt: What is the total of order 1012 in euros at today's exchange rate? Round to 2 decimals.
+  checks:
+    - type: answer_number
+      value: 182.16
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT total_usd FROM orders WHERE id = 1012"}
+    - call: get_exchange_rate
+      args: {base: USD, quote: EUR}
+    - answer: Order 1012 totals $198.00, which is €182.16 at 0.92.
+
+- id: shipping-quote-boots
+  category: multi_step
+  difficulty: medium
+  prompt: >-
+    Lena Fischer wants two pairs of Summit Hiking Boots shipped together in one package to her home country. What would the
+    shipping quote be?
+  checks:
+    - type: answer_number
+      value: 30.60
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT country FROM customers WHERE name = 'Lena Fischer'"}
+    - call: sql_query
+      args: {query: "SELECT sku, weight_kg FROM products WHERE name = 'Summit Hiking Boots'"}
+    - call: get_shipping_quote
+      args: {country: DE, weight_kg: 2.8}
+    - answer: Shipping 2.8 kg to Germany costs $30.60.
+
+- id: low-stock-report
+  category: multi_step
+  difficulty: medium
+  prompt: >-
+    Write the SKUs of every product with fewer than 10 units in stock to /reports/low_stock.txt,
+    one SKU per line and nothing else.
+  checks:
+    - type: file_lines
+      path: /reports/low_stock.txt
+      sql: SELECT sku FROM products WHERE stock < 10
+  oracle:
+    - call: sql_query
+      args: {query: "SELECT sku FROM products WHERE stock < 10"}
+    - call: write_file
+      args: {path: /reports/low_stock.txt, content: "TR-100\nMS-010\nBP-400\nTN-500\nTP-090\n"}
+    - answer: Wrote 5 low-stock SKUs to /reports/low_stock.txt.
+
+- id: lowest-margin-product
+  category: multi_step
+  difficulty: hard
+  prompt: >-
+    Our supplier sent updated wholesale costs. Which of the products we sell now has the lowest
+    margin in dollars (our price minus supplier cost)? Give the SKU and the margin.
+  checks:
+    - type: answer_contains
+      values: [WB-080]
+    - type: answer_number
+      value: 9.25
+  oracle:
+    - call: read_file
+      args: {path: /data/supplier_prices.csv}
+    - call: sql_query
+      args: {query: "SELECT sku, price_usd FROM products"}
+    - answer: WB-080 (Insulated Water Bottle) has the lowest margin, $9.25 ($29.00 - $19.75).
